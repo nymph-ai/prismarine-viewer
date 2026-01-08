@@ -5,11 +5,12 @@ const Entity = require('./entity/Entity')
 const { dispose3 } = require('./dispose')
 
 const { createCanvas } = require('canvas')
+const unknownEntityTypes = new Set()
 
-function getEntityMesh (entity, scene) {
+function getEntityMesh (entity, scene, version) {
   if (entity.name) {
     try {
-      const e = new Entity('1.16.4', entity.name, scene)
+      const e = new Entity(version, entity.name, scene)
 
       if (entity.username !== undefined) {
         const canvas = createCanvas(500, 100)
@@ -33,7 +34,9 @@ function getEntityMesh (entity, scene) {
       }
       return e.mesh
     } catch (err) {
-      console.log(err)
+      if (!unknownEntityTypes.has(entity.name)) {
+        unknownEntityTypes.add(entity.name)
+      }
     }
   }
 
@@ -45,9 +48,14 @@ function getEntityMesh (entity, scene) {
 }
 
 class Entities {
-  constructor (scene) {
+  constructor (scene, version) {
     this.scene = scene
     this.entities = {}
+    this.version = version
+  }
+
+  setVersion (version) {
+    this.version = version
   }
 
   clear () {
@@ -60,7 +68,7 @@ class Entities {
 
   update (entity) {
     if (!this.entities[entity.id]) {
-      const mesh = getEntityMesh(entity, this.scene)
+      const mesh = getEntityMesh(entity, this.scene, this.version || '1.16.4')
       if (!mesh) return
       this.entities[entity.id] = mesh
       this.scene.add(mesh)

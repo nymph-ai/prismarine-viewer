@@ -539,7 +539,7 @@
   "arrow": {
     "identifier": "minecraft:arrow",
     "materials": {"default": "arrow"},
-    "textures": {"default": "textures/entity/arrow"},
+    "textures": {"default": "textures/entity/projectiles/arrow"},
     "geometry": {
       "default": {
         "bones": [
@@ -1232,10 +1232,14 @@
     "textures": {
       "default": "textures/entity/boat/acacia",
       "acacia": "textures/entity/boat/acacia",
+      "bamboo": "textures/entity/boat/bamboo",
       "birch": "textures/entity/boat/birch",
-      "darkoak": "textures/entity/boat/dark_oak",
+      "cherry": "textures/entity/boat/cherry",
+      "dark_oak": "textures/entity/boat/dark_oak",
       "jungle": "textures/entity/boat/jungle",
+      "mangrove": "textures/entity/boat/mangrove",
       "oak": "textures/entity/boat/oak",
+      "pale_oak": "textures/entity/boat/pale_oak",
       "spruce": "textures/entity/boat/spruce"
     },
     "geometry": {

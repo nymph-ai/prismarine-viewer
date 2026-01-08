@@ -1,6 +1,7 @@
 /* global THREE */
 
 const entities = require('./entities.json')
+const aliases = require('./aliases')
 const { loadTexture } = globalThis.isElectron ? require('../utils.electron.js') : require('../utils')
 
 const elemFaces = {
@@ -168,8 +169,13 @@ function getMesh (texture, jsonModel) {
 
   const rootBones = []
   for (const jsonBone of jsonModel.bones) {
-    if (jsonBone.parent) bones[jsonBone.parent].add(bones[jsonBone.name])
-    else rootBones.push(bones[jsonBone.name])
+    const bone = bones[jsonBone.name]
+    const parent = jsonBone.parent ? bones[jsonBone.parent] : null
+    if (parent && bone) {
+      parent.add(bone)
+    } else if (bone) {
+      rootBones.push(bone)
+    }
   }
 
   const skeleton = new THREE.Skeleton(Object.values(bones))
@@ -200,14 +206,25 @@ function getMesh (texture, jsonModel) {
   return mesh
 }
 
+function resolveEntity (type) {
+  if (entities[type]) return { entry: entities[type] }
+  const alias = aliases[type]
+  if (!alias) return null
+  const entry = entities[alias.type]
+  if (!entry) return null
+  return { entry, texture: alias.texture }
+}
+
 class Entity {
   constructor (version, type, scene) {
-    const e = entities[type]
-    if (!e) throw new Error(`Unknown entity ${type}`)
+    const resolved = resolveEntity(type)
+    if (!resolved) throw new Error(`Unknown entity ${type}`)
+    const e = resolved.entry
+    const textureOverride = resolved.texture
 
     this.mesh = new THREE.Object3D()
     for (const [name, jsonModel] of Object.entries(e.geometry)) {
-      const texture = e.textures[name]
+      const texture = textureOverride || e.textures[name] || e.textures.default
       if (!texture) continue
       // console.log(JSON.stringify(jsonModel, null, 2))
       const mesh = getMesh(texture.replace('textures', 'textures/' + version) + '.png', jsonModel)
