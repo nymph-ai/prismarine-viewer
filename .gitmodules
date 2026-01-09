@@ -1,0 +1,3 @@
+[submodule "third_party/node-minecraft-assets"]
+	path = third_party/node-minecraft-assets
+	url = https://github.com/nymph-ai/node-minecraft-assets
