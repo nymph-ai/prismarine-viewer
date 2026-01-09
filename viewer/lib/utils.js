@@ -16,9 +16,11 @@ const fallbackVersion = process.env.PRISMARINE_VIEWER_FALLBACK_VERSION || ''
 
 function withFallbackVersion (relativePath) {
   if (!fallbackVersion) return null
-  const match = relativePath.match(/^(textures\/)([^/]+)\.png$/)
-  if (!match) return null
-  return `${match[1]}${fallbackVersion}.png`
+  let match = relativePath.match(/^(textures\/)([^/]+)\.png$/)
+  if (match) return `${match[1]}${fallbackVersion}.png`
+  match = relativePath.match(/^(textures\/)([^/]+)\/(.+)$/)
+  if (match) return `${match[1]}${fallbackVersion}/${match[3]}`
+  return null
 }
 
 function resolveAssetPath (relativePath) {
