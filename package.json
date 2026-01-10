@@ -25,7 +25,7 @@
     "@tweenjs/tween.js": "^23.1.1",
     "compression": "^1.7.4",
     "express": "^4.17.1",
-    "minecraft-data": "^3.102.3",
+    "minecraft-data": "npm:@nymph-ai/minecraft-data@latest",
     "prismarine-block": "^1.22.0",
     "prismarine-chunk": "^1.39.0",
     "prismarine-world": "^3.6.3",
