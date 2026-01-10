@@ -1,16 +1,23 @@
 const { Vec3 } = require('vec3')
 
-const tints = require('minecraft-data')('1.16.2').tints
-
-for (const key of Object.keys(tints)) {
-  tints[key] = prepareTints(tints[key])
+const tints = require('minecraft-data')('1.21.11').tints
+const tintDefaults = {
+  grass: 0x79c05a,
+  foliage: 0x59ae30,
+  water: 0x3f76e4
 }
 
-function prepareTints (tints) {
+for (const key of Object.keys(tints)) {
+  tints[key] = prepareTints(tints[key], tintDefaults[key])
+}
+
+function prepareTints (tints, fallbackTint) {
   const map = new Map()
-  const defaultValue = tintToGl(tints.default)
+  const defaultTint = tints.default ?? fallbackTint ?? 0xffffff
+  const defaultValue = tintToGl(defaultTint)
   for (let { keys, color } of tints.data) {
-    color = tintToGl(color)
+    const resolved = color === 0 ? defaultTint : color
+    color = tintToGl(resolved)
     for (const key of keys) {
       map.set(`${key}`, color)
     }
@@ -28,6 +35,8 @@ function tintToGl (tint) {
   const b = tint & 0xff
   return [r / 255, g / 255, b / 255]
 }
+
+let debugLogged = false
 
 const elemFaces = {
   up: {
@@ -228,7 +237,16 @@ function buildRotationMatrix (axis, degree) {
   return matrix
 }
 
-function renderElement (world, cursor, element, doAO, attr, globalMatrix, globalShift, block, biome) {
+function textureNameForDebug (texture, atlasIndex, tileSize) {
+  if (!texture || !atlasIndex || !tileSize) return null
+  const u0 = texture.u + (texture.su < 0 ? texture.su : 0)
+  const v0 = texture.v + (texture.sv < 0 ? texture.sv : 0)
+  const x = Math.round(u0 / tileSize)
+  const y = Math.round(v0 / tileSize)
+  return atlasIndex.get(`${x},${y}`) || null
+}
+
+function renderElement (world, cursor, element, doAO, attr, globalMatrix, globalShift, block, biome, debugState) {
   const cullIfIdentical = block.name.indexOf('glass') >= 0
 
   for (const face in element.faces) {
@@ -238,10 +256,15 @@ function renderElement (world, cursor, element, doAO, attr, globalMatrix, global
 
     if (eFace.cullface) {
       const neighbor = world.getBlock(cursor.plus(new Vec3(...dir)))
-      if (!neighbor) continue
-      if (cullIfIdentical && neighbor.type === block.type) continue
-      if (!neighbor.transparent && neighbor.isCube) continue
-      if (neighbor.position.y < 0) continue
+      if (!neighbor) {
+        // Missing neighbor chunks should be treated as air so faces render.
+      } else if (!neighbor.transparent && neighbor.isCube) {
+        continue
+      }
+      if (neighbor) {
+        if (cullIfIdentical && neighbor.type === block.type) continue
+        if (neighbor.position.y < 0) continue
+      }
     }
 
     const minx = element.from[0]
@@ -267,11 +290,20 @@ function renderElement (world, cursor, element, doAO, attr, globalMatrix, global
           block.name === 'spruce_leaves' ||
           block.name === 'lily_pad') {
           tint = tints.constant[block.name]
-        } else if (block.name.includes('leaves') || block.name === 'vine') {
-          tint = tints.foliage[biome]
         } else {
-          tint = tints.grass[biome]
+          if (block.name.includes('leaves') || block.name === 'vine') {
+            tint = tints.foliage[biome]
+          } else {
+            tint = tints.grass[biome]
+          }
         }
+      }
+    }
+
+    if (debugState && debugState.counts) {
+      const name = textureNameForDebug(eFace.texture, debugState.atlasIndex, debugState.tileSize)
+      if (name) {
+        debugState.counts.set(name, (debugState.counts.get(name) || 0) + 1)
       }
     }
 
@@ -379,6 +411,9 @@ function getSectionGeometry (sx, sy, sz, world, blocksStates) {
   }
 
   const cursor = new Vec3(0, 0, 0)
+  const debugState = (!debugLogged && blocksStates?.__atlasIndex)
+    ? { atlasIndex: blocksStates.__atlasIndex, tileSize: blocksStates.__atlasTileSize, counts: new Map() }
+    : null
   for (cursor.y = sy; cursor.y < sy + 16; cursor.y++) {
     for (cursor.z = sz; cursor.z < sz + 16; cursor.z++) {
       for (cursor.x = sx; cursor.x < sx + 16; cursor.x++) {
@@ -412,7 +447,7 @@ function getSectionGeometry (sx, sy, sz, world, blocksStates) {
             }
 
             for (const element of variant.model.elements) {
-              renderElement(world, cursor, element, variant.model.ao, attr, globalMatrix, globalShift, block, biome)
+              renderElement(world, cursor, element, variant.model.ao, attr, globalMatrix, globalShift, block, biome, debugState)
             }
           }
         }
@@ -446,6 +481,15 @@ function getSectionGeometry (sx, sy, sz, world, blocksStates) {
   attr.normals = new Float32Array(attr.normals)
   attr.colors = new Float32Array(attr.colors)
   attr.uvs = new Float32Array(attr.uvs)
+
+  if (debugState && !debugLogged) {
+    const top = [...debugState.counts.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10)
+      .map(([name, count]) => `${name}:${count}`)
+    attr.debugTopTextures = top
+    debugLogged = true
+  }
 
   return attr
 }
@@ -481,6 +525,10 @@ function getModelVariants (block, blockStates) {
   // air, cave_air, void_air and so on...
   if (block.name.includes('air')) return []
   const state = blockStates[block.name] ?? blockStates.missing_texture
+  if (state === blockStates.missing_texture && blockStates?.__atlasIndex && !blockStates.__loggedMissing) {
+    blockStates.__loggedMissing = true
+    console.log('[prismarine-viewer] missing blockStates for', block.name)
+  }
   if (!state) return []
   if (state.variants) {
     for (const [properties, variant] of Object.entries(state.variants)) {

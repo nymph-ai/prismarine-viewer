@@ -1,5 +1,12 @@
 function cleanupBlockName (name) {
-  if (name.startsWith('block') || name.startsWith('minecraft:block')) return name.split('/')[1]
+  if (
+    name.startsWith('block/') ||
+    name.startsWith('blocks/') ||
+    name.startsWith('minecraft:block/') ||
+    name.startsWith('minecraft:blocks/')
+  ) {
+    return name.split('/')[1]
+  }
   return name
 }
 

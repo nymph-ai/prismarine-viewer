@@ -23,7 +23,9 @@ function readTexture (basePath, name) {
 
 function makeTextureAtlas (mcAssets) {
   const blocksTexturePath = path.join(mcAssets.directory, '/blocks')
-  const textureFiles = fs.readdirSync(blocksTexturePath).filter(file => file.endsWith('.png'))
+  const textureFiles = fs.readdirSync(blocksTexturePath)
+    .filter(file => file.endsWith('.png'))
+    .sort()
   textureFiles.unshift('missing_texture.png')
 
   const texSize = nextPowerOfTwo(Math.ceil(Math.sqrt(textureFiles.length)))

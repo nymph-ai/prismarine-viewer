@@ -5357,7 +5357,7 @@
   "firework_rocket": {
     "identifier": "minecraft:fireworks_rocket",
     "materials": {"default": "fireworks_rocket"},
-    "textures": {"default": "textures/entity/fireworks"},
+    "textures": {"default": "textures/items/firework_rocket"},
     "geometry": {
       "default": {
         "bones": [

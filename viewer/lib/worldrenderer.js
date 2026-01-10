@@ -16,12 +16,21 @@ class WorldRenderer {
     this.version = undefined
     this.scene = scene
     this.loadedChunks = {}
+    this.chunkInfo = {}
     this.sectionsOutstanding = new Set()
     this.renderUpdateEmitter = new EventEmitter()
     this.blockStatesData = undefined
     this.texturesDataUrl = undefined
+    this.loggedFirstMesh = false
+    this.loggedPositiveMesh = false
+    this.loggedGeometryStats = false
 
-    this.material = new THREE.MeshLambertMaterial({ vertexColors: true, transparent: true, alphaTest: 0.1 })
+    this.material = new THREE.MeshBasicMaterial({
+      vertexColors: true,
+      color: 0xffffff,
+      transparent: false,
+      alphaTest: 0.1
+    })
 
     this.workers = []
     for (let i = 0; i < numWorkers; i++) {
@@ -34,6 +43,10 @@ class WorldRenderer {
       worker.onmessage = ({ data }) => {
         if (data.type === 'geometry') {
           let mesh = this.sectionMeshs[data.key]
+          if (data.geometry && data.geometry.debugTopTextures) {
+            console.log('[prismarine-viewer] top textures', data.geometry.debugTopTextures.join(', '))
+            delete data.geometry.debugTopTextures
+          }
           if (mesh) {
             this.scene.remove(mesh)
             dispose3(mesh)
@@ -52,6 +65,57 @@ class WorldRenderer {
 
           mesh = new THREE.Mesh(geometry, this.material)
           mesh.position.set(data.geometry.sx, data.geometry.sy, data.geometry.sz)
+          if (!this.loggedFirstMesh && data.geometry.positions.length > 0) {
+            this.loggedFirstMesh = true
+            geometry.computeBoundingBox()
+            const bb = geometry.boundingBox
+            console.log('[prismarine-viewer] mesh pos', data.key, mesh.position, 'bbox', bb && { min: bb.min, max: bb.max })
+            console.log('[prismarine-viewer] mesh material', {
+              type: mesh.material?.constructor?.name,
+              mapType: mesh.material?.map?.constructor?.name,
+              mapSize: mesh.material?.map?.image ? { width: mesh.material.map.image.width, height: mesh.material.map.image.height } : null
+            })
+            const uvAttr = geometry.getAttribute('uv')
+            const map = mesh.material?.map
+            const img = map?.image
+            if (uvAttr && img?.data && img?.width && img?.height) {
+              const u = uvAttr.array[0]
+              const v = uvAttr.array[1]
+              const x = Math.max(0, Math.min(img.width - 1, Math.floor(u * img.width)))
+              const y = Math.max(0, Math.min(img.height - 1, Math.floor(v * img.height)))
+              const yFlip = Math.max(0, Math.min(img.height - 1, Math.floor((1 - v) * img.height)))
+              const idx = (y * img.width + x) * 4
+              const idxFlip = (yFlip * img.width + x) * 4
+              const dataArr = img.data
+              const px = Array.from(dataArr.slice(idx, idx + 4))
+              const pxFlip = Array.from(dataArr.slice(idxFlip, idxFlip + 4))
+              console.log('[prismarine-viewer] uv sample', { u, v, x, y, yFlip, px, pxFlip })
+            }
+          }
+          if (!this.loggedGeometryStats && data.geometry.positions.length > 0) {
+            this.loggedGeometryStats = true
+            const colors = data.geometry.colors
+            const uvs = data.geometry.uvs
+            let minC = 1; let maxC = 0
+            for (let i = 0; i < colors.length; i++) {
+              const v = colors[i]
+              if (v < minC) minC = v
+              if (v > maxC) maxC = v
+            }
+            let minUv = 1; let maxUv = 0
+            for (let i = 0; i < uvs.length; i++) {
+              const v = uvs[i]
+              if (v < minUv) minUv = v
+              if (v > maxUv) maxUv = v
+            }
+            console.log('[prismarine-viewer] geom stats', data.key, { minC, maxC, minUv, maxUv })
+          }
+          if (!this.loggedPositiveMesh && data.geometry.positions.length > 0 && data.geometry.sy >= 0) {
+            this.loggedPositiveMesh = true
+            geometry.computeBoundingBox()
+            const bb = geometry.boundingBox
+            console.log('[prismarine-viewer] mesh pos positive', data.key, mesh.position, 'bbox', bb && { min: bb.min, max: bb.max })
+          }
           this.sectionMeshs[data.key] = mesh
           this.scene.add(mesh)
         } else if (data.type === 'sectionFinished') {
@@ -87,11 +151,31 @@ class WorldRenderer {
   }
 
   updateTexturesData () {
-    loadTexture(this.texturesDataUrl || `textures/${this.version}.png`, texture => {
+    const texturePath = this.texturesDataUrl || `textures/${this.version}.png`
+    loadTexture(texturePath, texture => {
+      if (!texture) return
       texture.magFilter = THREE.NearestFilter
       texture.minFilter = THREE.NearestFilter
-      texture.flipY = false
+      texture.generateMipmaps = false
+      texture.wrapS = THREE.ClampToEdgeWrapping
+      texture.wrapT = THREE.ClampToEdgeWrapping
+      texture.flipY = process.env.PRISMARINE_VIEWER_FLIP_Y === 'true'
+      texture.needsUpdate = true
       this.material.map = texture
+      this.material.color.set(0xffffff)
+      this.material.vertexColors = true
+      this.material.needsUpdate = true
+      if (!this.loggedTextureInfo) {
+        this.loggedTextureInfo = true
+        const img = texture.image
+        console.log('[prismarine-viewer] texture loaded', texturePath, {
+          type: texture.constructor?.name,
+          width: img?.width,
+          height: img?.height,
+          hasData: Boolean(img),
+          dataLength: img?.data?.length
+        })
+      }
     })
 
     const loadBlockStates = () => {
@@ -112,7 +196,17 @@ class WorldRenderer {
     for (const worker of this.workers) {
       worker.postMessage({ type: 'chunk', x, z, chunk })
     }
-    for (let y = 0; y < 256; y += 16) {
+    let minY = 0
+    let worldHeight = 256
+    try {
+      const parsed = JSON.parse(chunk)
+      if (Number.isFinite(parsed.minY)) minY = parsed.minY
+      if (Number.isFinite(parsed.worldHeight)) worldHeight = parsed.worldHeight
+    } catch {
+      // fall back to vanilla defaults
+    }
+    this.chunkInfo[`${x},${z}`] = { minY, worldHeight }
+    for (let y = minY; y < minY + worldHeight; y += 16) {
       const loc = new Vec3(x, y, z)
       this.setSectionDirty(loc)
       this.setSectionDirty(loc.offset(-16, 0, 0))
@@ -124,10 +218,15 @@ class WorldRenderer {
 
   removeColumn (x, z) {
     delete this.loadedChunks[`${x},${z}`]
+    const infoKey = `${x},${z}`
+    const info = this.chunkInfo[infoKey]
+    delete this.chunkInfo[infoKey]
     for (const worker of this.workers) {
       worker.postMessage({ type: 'unloadChunk', x, z })
     }
-    for (let y = 0; y < 256; y += 16) {
+    let minY = info?.minY ?? 0
+    let worldHeight = info?.worldHeight ?? 256
+    for (let y = minY; y < minY + worldHeight; y += 16) {
       this.setSectionDirty(new Vec3(x, y, z), false)
       const key = `${x},${y},${z}`
       const mesh = this.sectionMeshs[key]

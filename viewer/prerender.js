@@ -17,6 +17,25 @@ fs.mkdirSync(blockStatesPath, { recursive: true })
 const supportedVersions = require('./lib/version').supportedVersions
 const assetVersions = mcAssets.supportedVersions || []
 
+function normalizePath (value) {
+  if (typeof value !== 'string') return value
+  if (value.startsWith('minecraft:')) value = value.slice('minecraft:'.length)
+  if (value.startsWith('blocks/')) return `block/${value.slice('blocks/'.length)}`
+  return value
+}
+
+function normalizeModels (assets) {
+  for (const model of Object.values(assets.blocksModels)) {
+    if (!model) continue
+    if (typeof model.parent === 'string') model.parent = normalizePath(model.parent)
+    if (model.textures) {
+      for (const key of Object.keys(model.textures)) {
+        model.textures[key] = normalizePath(model.textures[key])
+      }
+    }
+  }
+}
+
 function pickFallbackVersion (version) {
   if (!assetVersions.length) return version
   if (assetVersions.includes(version)) return version
@@ -37,6 +56,7 @@ for (const version of supportedVersions) {
     console.warn(`minecraft-assets missing ${version}, falling back to ${fallbackVersion}`)
     assets = mcAssets(fallbackVersion)
   }
+  normalizeModels(assets)
   const atlas = makeTextureAtlas(assets)
   const out = fs.createWriteStream(path.resolve(texturesPath, version + '.png'))
   const stream = atlas.canvas.pngStream()

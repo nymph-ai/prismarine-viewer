@@ -90,6 +90,10 @@ class WorldView extends EventEmitter {
     if (dx < this.viewDistance && dz < this.viewDistance) {
       const column = await this.world.getColumnAt(pos)
       if (column) {
+        if (!this._loggedChunk) {
+          this._loggedChunk = true
+          console.log(`[prismarine-viewer] loadChunk pos=(${pos.x}, ${pos.z}) bot=(${this.lastPos.x.toFixed(2)}, ${this.lastPos.z.toFixed(2)})`)
+        }
         const chunk = column.toJson()
         this.emitter.emit('loadChunk', { x: pos.x, z: pos.z, chunk })
         this.loadedChunks[`${pos.x},${pos.z}`] = true
